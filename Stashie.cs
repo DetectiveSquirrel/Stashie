@@ -53,6 +53,11 @@ namespace Stashie
                     HandleSwitchToTabEvent(args);
                     break;
 
+                case "start_stashie":
+                    if (Core.ParallelRunner.FindByName(CoroutineName) == null)
+                        StartDropItemsToStashCoroutine();
+                    break;
+
                 default:
                     break;
             }
