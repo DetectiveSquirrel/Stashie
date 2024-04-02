@@ -14,6 +14,23 @@
     <EmbedAllSources>true</EmbedAllSources>
     <OutputPath>$(exapiPackage)\Plugins\Compiled\Stashie\</OutputPath>
   </PropertyGroup>
+  <PropertyGroup>
+    <PostBuildEvent>
+      cd "$(OutputPath)"
+      for /r %%i in (*.dll) do (
+      if not "%%~nxi" == "Stashie.dll" (
+      echo Deleting "%%i"
+      del /q "%%i"
+      )
+      )
+      for /d /r %%i in (*) do (
+      if not "%%~nxi" == "Stashie" (
+      echo Deleting directory "%%i"
+      rd /s /q "%%i"
+      )
+      )
+    </PostBuildEvent>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="ImGui.NET" Version="1.90.0.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
@@ -23,9 +40,11 @@
   <ItemGroup>
     <Reference Include="ExileCore">
       <HintPath>$(exapiPackage)\ExileCore.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="ItemFilterLibrary">
       <HintPath>$(exapiPackage)\ItemFilterLibrary.dll</HintPath>
+      <Private>False</Private>
     </Reference>
   </ItemGroup>
   <ItemGroup>
