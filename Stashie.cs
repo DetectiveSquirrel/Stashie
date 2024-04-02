@@ -462,6 +462,7 @@ namespace Stashie
             _debugTimer.Stop();
             _debugTimer.Reset();
             CleanUp();
+            PublishEvent("stashie_finish_drop_items_to_stash_tab", null);
         }
 
         private IEnumerator DropToStashRoutine()
@@ -674,7 +675,6 @@ namespace Stashie
                 yield return StashItem(stashresult);
 
                 _debugTimer.Restart();
-                PublishEvent("stashie_finish_drop_items_to_stash_tab", null);
             }
         }
 
