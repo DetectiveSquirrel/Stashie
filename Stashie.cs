@@ -554,6 +554,42 @@ namespace Stashie
                         _dropItems.Add(result);
                 }
             }
+
+            #region Ignore 1 max stack of wisdoms/portals
+
+            var wisdoms = _dropItems.Where(item => item.ItemData.BaseName == @"Scroll of Wisdom").ToList();
+            if (wisdoms.Count > 0)
+            {
+                wisdoms.Sort((o1, o2) => o1?.ItemData.StackInfo.Count < o2?.ItemData.StackInfo.Count ? 1 : -1);
+                var wisdom = wisdoms[0];
+                foreach (var dropItem in _dropItems)
+                {
+                    if (dropItem.ItemData.BaseName == wisdom.ItemData.BaseName &&
+                        dropItem.ItemData.StackInfo.Count == wisdom.ItemData.StackInfo.Count)
+                    {
+                        _dropItems.Remove(dropItem);
+                        break;
+                    }
+                }
+            }
+
+            var portals = _dropItems.Where(item => item.ItemData.BaseName == @"Portal Scroll").ToList();
+            if (portals.Count > 0)
+            {
+                portals.Sort((o1, o2) => o1?.ItemData.StackInfo.Count < o2?.ItemData.StackInfo.Count ? 1 : -1);
+                var wisdom = portals[0];
+                foreach (var dropItem in _dropItems)
+                {
+                    if (dropItem.ItemData.BaseName == wisdom.ItemData.BaseName &&
+                        dropItem.ItemData.StackInfo.Count == wisdom.ItemData.StackInfo.Count)
+                    {
+                        _dropItems.Remove(dropItem);
+                        break;
+                    }
+                }
+            }
+
+            #endregion
         }
 
         public RectangleF GetExpenadedClientRect(InventSlotItem item)
