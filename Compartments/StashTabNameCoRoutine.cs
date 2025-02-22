@@ -4,6 +4,7 @@ using Stashie.Classes;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using static Stashie.StashieCore;
 
 namespace Stashie.Compartments;
@@ -128,7 +129,7 @@ internal class StashTabNameCoRoutine
             _counterStashTabNamesCoroutine++;
             Main.StashTabNamesCoroutine?.UpdateTicks(_counterStashTabNamesCoroutine);
             var cachedNames = Main.Settings.AllStashNames;
-            var realNames = stashPanel.AllStashNames;
+            var realNames = stashPanel.Inventories.Select(inventory => inventory.TabName).ToList();
 
             if (realNames.Count + 1 != cachedNames.Count)
             {
