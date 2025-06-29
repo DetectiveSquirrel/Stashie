@@ -8,24 +8,28 @@ using ImGuiNET;
 using Stashie.Classes;
 using static Stashie.StashieCore;
 using Vector2N = System.Numerics.Vector2;
+using Vector4N = System.Numerics.Vector4;
 
 namespace Stashie.Compartments;
 
 public class StashieEditorHandler
 {
     public const string OverwritePopup = "Overwrite?";
-    public static string EditorGroupFilter = "";
-    public static string EditorQueryFilter = "";
-    public static string EditorQueryContentFilter = "";
+    public static string _editorGroupFilter = "";
+    public static string _editorQueryFilter = "";
+    public static string _editorQueryContentFilter = "";
     public static string FileSaveName = "";
     public static string SelectedFileName = "";
 
-    public static List<string> Files = [];
-    public static FilterEditor.Filter CondEditValue = new();
-    public static FilterEditor.Filter TempCondValue = new();
+    public static List<string> _files = [];
+    public static FilterEditor.Filter condEditValue = new();
+    public static FilterEditor.Filter tempCondValue = new();
+    public static FilterEditorOld.FilterParent tempConversion = new();
 
-    private static readonly List<Action> QueuedOperations = [];
+    // Queued operations to avoid modifying collections while iterating
+    private static readonly List<Action> _queuedOperations = new();
 
+    // Drag and drop payload structures must be structs to satisfy the 'unmanaged' constraint
     private struct FilterDragPayload
     {
         public int ParentIndex;
@@ -53,9 +57,10 @@ public class StashieEditorHandler
             if (!FileManager.TryLoadFile<FilterEditorOld.FilterParent>(
                     file, ".ifl", obj =>
                     {
+                        var oldData = obj;
                         var newData = new FilterEditor.FilterParent
                         {
-                            ParentMenu = obj.ParentMenu.Select(
+                            ParentMenu = oldData.ParentMenu.Select(
                                     pm => new FilterEditor.ParentMenu
                                     {
                                         MenuName = pm.MenuName,
@@ -85,9 +90,9 @@ public class StashieEditorHandler
         if (!ImGui.CollapsingHeader("Filters", ImGuiTreeNodeFlags.DefaultOpen)) return;
 
         ImGui.Indent();
-        ImGui.InputTextWithHint("Filter Groups", "Group...", ref EditorGroupFilter, 100);
-        ImGui.InputTextWithHint("Filter Queries", "Query...", ref EditorQueryFilter, 100);
-        ImGui.InputTextWithHint("Filter Query Content", "Query Content...", ref EditorQueryContentFilter, 100);
+        ImGui.InputTextWithHint("Filter Groups", "Group...", ref _editorGroupFilter, 100);
+        ImGui.InputTextWithHint("Filter Queries", "Query...", ref _editorQueryFilter, 100);
+        ImGui.InputTextWithHint("Filter Query Content", "Query Content...", ref _editorQueryContentFilter, 100);
 
         for (var parentIndex = 0; parentIndex < tempFilters.Count; parentIndex++)
         {
@@ -95,9 +100,9 @@ public class StashieEditorHandler
             var currentParent = tempFilters[localParentIndex];
             ImGui.PushID(localParentIndex);
 
-            if (!currentParent.MenuName.Contains(EditorGroupFilter, StringComparison.InvariantCultureIgnoreCase) ||
-                currentParent.Filters.All(x => !x.FilterName.Contains(EditorQueryFilter, StringComparison.InvariantCultureIgnoreCase)) ||
-                currentParent.Filters.All(x => !x.RawQuery.Contains(EditorQueryContentFilter, StringComparison.InvariantCultureIgnoreCase)))
+            if (!currentParent.MenuName.Contains(_editorGroupFilter, StringComparison.InvariantCultureIgnoreCase) ||
+                currentParent.Filters.All(x => !x.FilterName.Contains(_editorQueryFilter, StringComparison.InvariantCultureIgnoreCase)) ||
+                currentParent.Filters.All(x => !x.RawQuery.Contains(_editorQueryContentFilter, StringComparison.InvariantCultureIgnoreCase)))
             {
                 ImGui.PopID();
                 continue;
@@ -115,8 +120,8 @@ public class StashieEditorHandler
                 var currentFilter = currentParent.Filters[localFilterIndex];
                 ImGui.PushID(localFilterIndex);
 
-                if (!currentFilter.FilterName.Contains(EditorQueryFilter, StringComparison.InvariantCultureIgnoreCase) ||
-                    !currentFilter.RawQuery.Contains(EditorQueryContentFilter, StringComparison.InvariantCultureIgnoreCase))
+                if (!currentFilter.FilterName.Contains(_editorQueryFilter, StringComparison.InvariantCultureIgnoreCase) ||
+                    !currentFilter.RawQuery.Contains(_editorQueryContentFilter, StringComparison.InvariantCultureIgnoreCase))
                 {
                     ImGui.PopID();
                     continue;
@@ -145,23 +150,23 @@ public class StashieEditorHandler
                     }
                     else
                     {
-                        CondEditValue = new FilterEditor.Filter
+                        condEditValue = new FilterEditor.Filter
                         {
                             FilterName = currentFilter.FilterName, Affinity = currentFilter.Affinity, RawQuery = currentFilter.RawQuery,
                             Shifting = currentFilter.Shifting
                         };
-                        TempCondValue = new FilterEditor.Filter
+                        tempCondValue = new FilterEditor.Filter
                         {
                             FilterName = currentFilter.FilterName, Affinity = currentFilter.Affinity, RawQuery = currentFilter.RawQuery,
                             Shifting = currentFilter.Shifting
                         };
-                        _editor = new EditorRecord(localParentIndex, localFilterIndex);
+                        Editor = new EditorRecord(localParentIndex, localFilterIndex);
                     }
                 }
 
                 ImGui.SameLine();
                 if (ImGui.Button("Delete"))
-                    QueuedOperations.Add(
+                    _queuedOperations.Add(
                         () =>
                         {
                             ResetEditingIdentifiers();
@@ -172,7 +177,7 @@ public class StashieEditorHandler
             }
 
             if (ImGui.Button("[=] Add New Filter"))
-                QueuedOperations.Add(
+                _queuedOperations.Add(
                     () =>
                     {
                         ResetEditingIdentifiers();
@@ -184,7 +189,7 @@ public class StashieEditorHandler
             ImGui.Unindent();
 
             if (ImGui.Button("[X] Delete Group"))
-                QueuedOperations.Add(
+                _queuedOperations.Add(
                     () =>
                     {
                         tempFilters.RemoveAt(localParentIndex);
@@ -198,7 +203,7 @@ public class StashieEditorHandler
 
         ImGui.Unindent();
         if (ImGui.Button("[=] Add New Group"))
-            QueuedOperations.Add(
+            _queuedOperations.Add(
                 () =>
                 {
                     ResetEditingIdentifiers();
@@ -207,7 +212,7 @@ public class StashieEditorHandler
                             { MenuName = "", Filters = [new FilterEditor.Filter { FilterName = "", RawQuery = "", Affinity = false, Shifting = false }] });
                 });
 
-        foreach (var operation in QueuedOperations)
+        foreach (var operation in _queuedOperations)
         {
             try
             {
@@ -219,7 +224,7 @@ public class StashieEditorHandler
             }
         }
 
-        QueuedOperations.Clear();
+        _queuedOperations.Clear();
 
         Main.Settings.CurrentFilterOptions.ParentMenu = tempFilters;
     }
@@ -252,10 +257,20 @@ public class StashieEditorHandler
             {
                 var payload = groupPayload.Value;
                 if (payload.GroupIndex != localParentIndex)
-                    QueuedOperations.Add(
+                    _queuedOperations.Add(
                         () =>
                         {
-                            (tempFilters[payload.GroupIndex], tempFilters[localParentIndex]) = (tempFilters[localParentIndex], tempFilters[payload.GroupIndex]);
+                            var sourceIndex = payload.GroupIndex;
+                            var targetIndex = localParentIndex;
+                            var movedGroup = tempFilters[sourceIndex];
+                            
+                            tempFilters.RemoveAt(sourceIndex);
+                            if (sourceIndex < targetIndex)
+                            {
+                                targetIndex--;
+                            }
+                            tempFilters.Insert(targetIndex, movedGroup);
+
                             ResetEditingIdentifiers();
                         });
             }
@@ -297,7 +312,7 @@ public class StashieEditorHandler
             if (filterPayload.HasValue && ImGui.IsMouseReleased(ImGuiMouseButton.Left))
             {
                 var payload = filterPayload.Value;
-                QueuedOperations.Add(
+                _queuedOperations.Add(
                     () =>
                     {
                         var sourceParent = tempFilters[payload.ParentIndex];
@@ -306,8 +321,17 @@ public class StashieEditorHandler
 
                         if (payload.ParentIndex == localParentIndex)
                         {
-                            var targetRule = targetParent.Filters[localFilterIndex];
-                            (sourceParent.Filters[payload.FilterIndex], targetParent.Filters[localFilterIndex]) = (targetRule, movedRule);
+                            var sourceIndex = payload.FilterIndex;
+                            var targetIndex = localFilterIndex;
+                            if (sourceIndex != targetIndex)
+                            {
+                                sourceParent.Filters.RemoveAt(sourceIndex);
+                                if (sourceIndex < targetIndex)
+                                {
+                                    targetIndex--;
+                                }
+                                sourceParent.Filters.Insert(targetIndex, movedRule);
+                            }
                         }
                         else
                         {
@@ -327,7 +351,7 @@ public class StashieEditorHandler
 
     private static void BeginFilterEditWindow(int parentIndex, int filterIndex, List<FilterEditor.ParentMenu> parentMenu)
     {
-        if (_editor.GroupIndex != parentIndex || _editor.FilterIndex != filterIndex)
+        if (Editor.GroupIndex != parentIndex || Editor.FilterIndex != filterIndex)
             return;
 
         if (!ImGui.Begin("Edit Stashie Filter", ImGuiWindowFlags.None))
@@ -340,20 +364,20 @@ public class StashieEditorHandler
         var filterName = parentMenu[parentIndex].Filters[filterIndex].FilterName;
 
         ImGui.BulletText(
-            $"Editing: Group[{(!string.IsNullOrEmpty(groupName) ? groupName : _editor.GroupIndex + 1)}] => Filter[{(!string.IsNullOrEmpty(filterName) ? filterName : _editor.FilterIndex + 1)}]");
+            $"Editing: Group[{(!string.IsNullOrEmpty(groupName) ? groupName : Editor.GroupIndex + 1)}] => Filter[{(!string.IsNullOrEmpty(filterName) ? filterName : Editor.FilterIndex + 1)}]");
 
         if (ImGui.Button("Save"))
         {
-            parentMenu[parentIndex].Filters[filterIndex] = TempCondValue;
+            parentMenu[parentIndex].Filters[filterIndex] = tempCondValue;
             ResetEditingIdentifiers();
         }
 
         ImGui.SameLine();
 
         if (ImGui.Button("Revert"))
-            TempCondValue = new FilterEditor.Filter
+            tempCondValue = new FilterEditor.Filter
             {
-                FilterName = CondEditValue.FilterName, Affinity = CondEditValue.Affinity, RawQuery = CondEditValue.RawQuery, Shifting = CondEditValue.Shifting
+                FilterName = condEditValue.FilterName, Affinity = condEditValue.Affinity, RawQuery = condEditValue.RawQuery, Shifting = condEditValue.Shifting
             };
 
         ImGui.SameLine();
@@ -361,10 +385,10 @@ public class StashieEditorHandler
         if (ImGui.Button("Close"))
             ResetEditingIdentifiers();
 
-        CheckboxWithTooltip("Shifting", ref TempCondValue.Shifting, "Holds Shift to bypass Tab Affinity.");
-        CheckboxWithTooltip("Affinity", ref TempCondValue.Affinity, "Assumes Affinity is set and won't change to selected stash tab\nwhen stashing items.");
+        CheckboxWithTooltip("Shifting", ref tempCondValue.Shifting, "Holds Shift to bypass Tab Affinity.");
+        CheckboxWithTooltip("Affinity", ref tempCondValue.Affinity, "Assumes Affinity is set and won't change to selected stash tab\nwhen stashing items.");
 
-        ImGui.InputTextMultiline("##text_edit", ref TempCondValue.RawQuery, 15000, ImGui.GetContentRegionAvail(), ImGuiInputTextFlags.AllowTabInput);
+        ImGui.InputTextMultiline("##text_edit", ref tempCondValue.RawQuery, 15000, ImGui.GetContentRegionAvail(), ImGuiInputTextFlags.AllowTabInput);
 
         ImGui.End();
     }
@@ -380,15 +404,15 @@ public class StashieEditorHandler
 
     private static void ResetEditingIdentifiers()
     {
-        _editor = new EditorRecord(-1, -1);
+        Editor = new EditorRecord(-1, -1);
     }
 
     private static bool IsCurrentEditorContext(int groupIndex, int stepIndex)
     {
-        return _editor.FilterIndex == stepIndex && _editor.GroupIndex == groupIndex;
+        return Editor.FilterIndex == stepIndex && Editor.GroupIndex == groupIndex;
     }
 
-    private static EditorRecord _editor = new(-1, -1);
+    private static EditorRecord Editor = new(-1, -1);
 
     private record EditorRecord(int GroupIndex, int FilterIndex);
 
@@ -403,8 +427,9 @@ public class StashieEditorHandler
 
         if (ImGui.Button("Save To File"))
         {
-            Files = FileManager.GetFilesWithExtension(Main.ConfigDirectory, ".json");
+            _files = FileManager.GetFilesWithExtension(Main.ConfigDirectory, ".json");
 
+            // Sanitize the file name by replacing invalid characters
             foreach (var c in Path.GetInvalidFileNameChars())
             {
                 FileSaveName = FileSaveName.Replace(c, '_');
@@ -412,7 +437,7 @@ public class StashieEditorHandler
 
             if (!string.IsNullOrEmpty(FileSaveName))
             {
-                if (Files.Contains(FileSaveName))
+                if (_files.Contains(FileSaveName))
                     ImGui.OpenPopup(OverwritePopup);
                 else
                     FileManager.SaveToFile(Main.Settings.CurrentFilterOptions, FileSaveName);
@@ -423,9 +448,9 @@ public class StashieEditorHandler
 
         if (ImGui.BeginCombo("Load File##LoadNewFile", SelectedFileName))
         {
-            Files = FileManager.GetFilesWithExtension(Main.ConfigDirectory, ".json");
+            _files = FileManager.GetFilesWithExtension(Main.ConfigDirectory, ".json");
 
-            foreach (var fileName in Files)
+            foreach (var fileName in _files)
             {
                 var isSelected = SelectedFileName == fileName;
 
@@ -467,11 +492,9 @@ public class StashieEditorHandler
 
         ImGui.Unindent();
 
-        if (!ShowButtonPopup(OverwritePopup, ["Are you sure?", "STOP"], out var saveSelectedIndex))
-            return;
-
-        if (saveSelectedIndex == 0)
-            FileManager.SaveToFile(Main.Settings.CurrentFilterOptions, FileSaveName);
+        if (ShowButtonPopup(OverwritePopup, ["Are you sure?", "STOP"], out var saveSelectedIndex))
+            if (saveSelectedIndex == 0)
+                FileManager.SaveToFile(Main.Settings.CurrentFilterOptions, FileSaveName);
     }
 
     public static bool ShowButtonPopup(string popupId, List<string> items, out int selectedIndex)
